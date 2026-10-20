@@ -1,6 +1,6 @@
 /*
- * ESP32 - Repetidor WiFi con NAT + clonado de MAC
- * ------------------------------------------------
+ * ESP32-C5 - Repetidor WiFi con NAT + clonado de MAC
+ * --------------------------------------------------
  * STA : se conecta a la red restringida usando la MAC del dispositivo autorizado.
  * AP  : crea una red propia para la laptop y el celular.
  * NAPT: enruta (NAT) el trafico entre el AP y la red restringida -> ambos navegan.
@@ -22,7 +22,7 @@
 #include "esp_netif.h"
 
 // ---------------- CONFIGURA ESTO ----------------
-const char* STA_SSID = "RedRestringida";          // red restringida (usar banda 2.4 GHz)
+const char* STA_SSID = "RedRestringida";          // red restringida (RedRestringida, banda 5 GHz)
 const char* STA_PASS = "***CLAVE_RETIRADA***";  // contrasena WPA2 de RedRestringida
 
 const char* AP_SSID  = "ESP32-Extender";      // red que creara el ESP32
@@ -60,13 +60,19 @@ void setup() {
   esp_err_t r = esp_wifi_set_mac(WIFI_IF_STA, CLONE_MAC);
   Serial.printf("set_mac STA: %s\n", esp_err_to_name(r));
 
-  // 2) Conectar a la red restringida
+  // 2) Conectar a la red restringida (espera acotada: si no engancha en 30 s,
+  //    igual se levanta el AP y el loop sigue reintentando la conexion STA).
   WiFi.begin(STA_SSID, STA_PASS);
   Serial.printf("Conectando a %s", STA_SSID);
-  while (WiFi.status() != WL_CONNECTED) { delay(500); Serial.print("."); }
+  unsigned long t0 = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - t0 < 30000) { delay(500); Serial.print("."); }
   Serial.println();
-  Serial.print("STA IP:  "); Serial.println(WiFi.localIP());
-  Serial.print("STA MAC: "); Serial.println(WiFi.macAddress());  // debe mostrar 00:11:22:33:44:55
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.print("STA IP:  "); Serial.println(WiFi.localIP());
+    Serial.print("STA MAC: "); Serial.println(WiFi.macAddress());  // debe mostrar 00:11:22:33:44:55
+  } else {
+    Serial.println("STA sin conexion aun; levanto el AP y el loop reintentara.");
+  }
 
   // 3) Levantar el AP en una subred distinta a la de RedRestringida (192.168.1.x)
   WiFi.softAPConfig(IPAddress(192,168,4,1),
