@@ -1,0 +1,9 @@
+# dependencias
+node_modules/
+# secretos/datos de runtime del server
+server/.env
+server/data/*.jsonl
+# Arduino build
+build/
+*.bin
+*.elf

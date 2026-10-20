@@ -1,0 +1,25 @@
+name: Deploy
+
+# CI/CD sencillo: al hacer push a main, se le pide a la deploy-api global
+# (deploy.angelonesto.com) que despliegue el proyecto 'esp32-telemetry' en VM 103.
+# La deploy-api hace el git pull + npm ci + pm2 restart del lado del servidor.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy via Deploy API
+        run: |
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
+            "https://deploy.angelonesto.com/deploy/esp32-telemetry" \
+            -H "Authorization: Bearer ${{ secrets.DEPLOY_TOKEN }}" \
+            --max-time 300)
+          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+          echo "$RESPONSE" | sed '$d'
+          [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ] \
+            || { echo "::error::Deploy failed (HTTP $HTTP_CODE)"; exit 1; }
