@@ -172,6 +172,7 @@ function dashboardPage() {
     </div>
   </header>
   <main>
+    <div id="banner" class="banner" hidden></div>
     <section class="grid" id="cards"></section>
     <section class="panel">
       <div class="panel-head"><h2>RSSI</h2><span class="muted" id="rssi-now"></span></div>
@@ -206,6 +207,9 @@ async function tick(){
   $('#state').textContent = l ? (online?('En línea · hace '+ago(l.ts)):('Sin señal · hace '+ago(l.ts))) : 'Sin datos aún';
   $('#devid').textContent = l ? (l.device_id||'—')+(l.fw?(' · fw '+l.fw):'') : '—';
   $('#updated').textContent = new Date().toLocaleTimeString();
+  const banner=$('#banner'), cards=$('#cards');
+  if(l && !online){ banner.hidden=false; banner.textContent='⚠ Sin datos recientes (último hace '+ago(l.ts)+'). Es el ÚLTIMO estado conocido, puede no reflejar el actual.'; cards.classList.add('stale'); }
+  else { banner.hidden=true; cards.classList.remove('stale'); }
   if(l){
     const macOk = l.sta_mac===d.expected_mac;
     $('#cards').innerHTML =
@@ -279,6 +283,8 @@ header{position:sticky;top:0;z-index:5;display:flex;justify-content:space-betwee
 .dot.bad{background:var(--bad)}
 @keyframes pulse{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--ok) 55%,transparent)}70%{box-shadow:0 0 0 7px transparent}100%{box-shadow:0 0 0 0 transparent}}
 main{max-width:1040px;margin:0 auto;padding:22px}
+.banner{background:color-mix(in srgb,var(--warn) 14%,transparent);color:var(--warn);border:1px solid color-mix(in srgb,var(--warn) 42%,var(--line));border-radius:12px;padding:11px 14px;font-size:13.5px;font-weight:600;margin-bottom:18px}
+.stale{opacity:.5;filter:grayscale(.45);transition:opacity .2s}
 /* stat grid */
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(166px,1fr));gap:14px;margin-bottom:20px}
 .stat{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:15px 16px;box-shadow:var(--shadow);position:relative;overflow:hidden}
