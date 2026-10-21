@@ -7,3 +7,6 @@ server/data/*.jsonl
 build/
 *.bin
 *.elf
+
+# copia privada para flashear (valores reales de tu red, MAC, token) - NO subir
+privado/
