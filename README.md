@@ -14,7 +14,7 @@ sus propios clientes. Además envía telemetría a un servidor propio con dashbo
 
 - **STA**: el ESP se conecta a la red restringida usando la MAC del dispositivo
   autorizado (clonada).
-- **AP**: crea su propia red (por defecto `iPhone 16`, un nombre discreto) para la
+- **AP**: crea su propia red para la
   laptop y el celular.
 - **NAPT**: enruta (NAT) el tráfico entre su AP y la red restringida → todos navegan.
 
