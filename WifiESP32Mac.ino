@@ -5,7 +5,7 @@
  * AP  : crea una red propia para la laptop y el celular.
  * NAPT: enruta (NAT) el trafico entre el AP y la red restringida -> ambos navegan.
  *
- * Diseno: la laptop autorizada se conecta al AP del ESP32 (NO directo a RedRestringida),
+ * Diseno: la laptop autorizada se conecta al AP del ESP32 (NO directo a la red),
  *         asi la unica MAC que aparece en la red restringida es la del ESP32 clonada,
  *         y se evita el conflicto de "dos equipos con la misma MAC".
  *
@@ -13,6 +13,10 @@
  *   - ESP32 Arduino core 3.x  (Gestor de placas: "esp32" by Espressif)
  *   - Placa: ESP32-C5 (doble banda). RedRestringida es de 5 GHz (canales 44/64),
  *     por eso se usa el C5 y no el ESP32 clasico (que solo hace 2.4 GHz).
+ *
+ * Nota de portabilidad: para obtener la interfaz del AP se usa la API de ESP-IDF
+ * esp_netif_get_handle_from_ifkey("WIFI_AP_DEF") en lugar de WiFi.AP.netif(),
+ * porque esta ultima no existe en todas las versiones del core y rompe la compilacion.
  */
 
 #include <WiFi.h>
@@ -24,12 +28,17 @@
 // ---------------- CONFIGURA ESTO ----------------
 const char* STA_SSID = "RedRestringida";          // red restringida (RedRestringida, banda 5 GHz)
 const char* STA_PASS = "***CLAVE_RETIRADA***";  // contrasena WPA2 de RedRestringida
+// (Para probar en otra red, cambia SSID/PASS de arriba.)
 
 const char* AP_SSID  = "ESP32-Extender";      // red que creara el ESP32
 const char* AP_PASS  = "clave12345";          // minimo 8 caracteres
 
 // MAC del dispositivo autorizado a clonar (la de tu laptop: 00:11:22:33:44:55)
 uint8_t CLONE_MAC[6] = {0x00, 0x11, 0x22, 0x33, 0x44, 0x55};
+// Clonar la MAC: para RedRestringida (que filtra por MAC) va en TRUE -> el ESP usa
+// 00:11:22:33:44:55. Ponlo en false solo si pruebas en una red sin filtro donde
+// tu laptop ya este conectada con esa misma MAC (para evitar conflicto).
+const bool CLONE_MAC_ENABLED = true;
 
 // ---- Telemetria al servidor (dashboard) ----
 // URL publica de tu API (tunel Cloudflare). Debe terminar en /api/telemetry
@@ -43,25 +52,58 @@ const unsigned long TELEMETRY_INTERVAL_MS = 30000;  // cada 30 s
 
 bool g_naptOk = false;   // resultado del NAPT, lo reporta la telemetria
 
+// Devuelve la interfaz de red del AP (portable entre versiones del core).
+static esp_netif_t* obtenerApNetif() {
+  esp_netif_t* ap = esp_netif_get_handle_from_ifkey("WIFI_AP_DEF");
+  return ap;  // puede ser NULL si el AP aun no esta levantado
+}
+
 void setup() {
   Serial.begin(115200);
   delay(500);
-  Serial.println("\n== ESP32 repetidor con MAC clonada ==");
+  Serial.println("\n== ESP32-C5 repetidor con MAC clonada ==");
 
   WiFi.mode(WIFI_AP_STA);
 
   // 0) ESP32-C5: habilitar los canales de 5 GHz.
-  //    Con ieee80211d=true el chip adopta la region que anuncia RedRestringida
-  //    (canales 44/64). Ajusta "US" a tu pais si tu zona usa otro perfil.
+  //    Con ieee80211d=true el chip adopta la region que anuncia la red destino
+  //    (p. ej. canales 44/64). Ajusta "US" a tu pais si tu zona usa otro perfil.
   esp_err_t c = esp_wifi_set_country_code("US", true);
   Serial.printf("set_country: %s\n", esp_err_to_name(c));
 
-  // 1) Clonar la MAC ANTES de conectar
-  esp_err_t r = esp_wifi_set_mac(WIFI_IF_STA, CLONE_MAC);
-  Serial.printf("set_mac STA: %s\n", esp_err_to_name(r));
+  // 0.1) ESP32-C5 doble banda: que el chip ESCOJA la banda (2.4 o 5 GHz).
+  //      RedRestringida es 5 GHz, asi que AUTO enganchara ahi; y vale para cualquier red.
+  esp_err_t bm = esp_wifi_set_band_mode(WIFI_BAND_MODE_AUTO);
+  Serial.printf("set_band_mode(AUTO): %s\n", esp_err_to_name(bm));
 
-  // 2) Conectar a la red restringida (espera acotada: si no engancha en 30 s,
-  //    igual se levanta el AP y el loop sigue reintentando la conexion STA).
+  // 1) Clonar la MAC ANTES de conectar (solo si esta habilitado)
+  if (CLONE_MAC_ENABLED) {
+    esp_err_t r = esp_wifi_set_mac(WIFI_IF_STA, CLONE_MAC);
+    Serial.printf("set_mac STA: %s\n", esp_err_to_name(r));
+  } else {
+    Serial.println("set_mac STA: OMITIDO (modo prueba, MAC de fabrica)");
+  }
+
+  // 2) Levantar el AP primero, en una subred distinta a la de la red destino.
+  //    (Levantarlo antes de conectar la STA asegura que WIFI_AP_DEF ya exista.)
+  WiFi.softAPConfig(IPAddress(192,168,4,1),
+                    IPAddress(192,168,4,1),
+                    IPAddress(255,255,255,0));
+  WiFi.softAP(AP_SSID, AP_PASS);
+  Serial.print("AP IP:   "); Serial.println(WiFi.softAPIP());
+
+  // 2.1) Escaneo de diagnostico: confirma que la red destino se ve y en que canal.
+  //      Si VRLAB/RedRestringida NO aparece aqui, es banda/alcance, no contrasena.
+  int nn = WiFi.scanNetworks();
+  Serial.printf("Redes visibles: %d\n", nn);
+  for (int i = 0; i < nn && i < 20; i++) {
+    Serial.printf("  %-24s ch%-3d %4d dBm\n",
+                  WiFi.SSID(i).c_str(), WiFi.channel(i), WiFi.RSSI(i));
+  }
+  WiFi.scanDelete();
+
+  // 3) Conectar a la red restringida (espera acotada: si no engancha en 30 s,
+  //    igual seguimos y el loop reintenta).
   WiFi.begin(STA_SSID, STA_PASS);
   Serial.printf("Conectando a %s", STA_SSID);
   unsigned long t0 = millis();
@@ -69,37 +111,34 @@ void setup() {
   Serial.println();
   if (WiFi.status() == WL_CONNECTED) {
     Serial.print("STA IP:  "); Serial.println(WiFi.localIP());
-    Serial.print("STA MAC: "); Serial.println(WiFi.macAddress());  // debe mostrar 00:11:22:33:44:55
+    Serial.print("STA MAC: "); Serial.println(WiFi.macAddress());
   } else {
-    Serial.println("STA sin conexion aun; levanto el AP y el loop reintentara.");
+    Serial.println("STA sin conexion aun; el loop reintentara.");
   }
 
-  // 3) Levantar el AP en una subred distinta a la de RedRestringida (192.168.1.x)
-  WiFi.softAPConfig(IPAddress(192,168,4,1),
-                    IPAddress(192,168,4,1),
-                    IPAddress(255,255,255,0));
-  WiFi.softAP(AP_SSID, AP_PASS);
-  Serial.print("AP IP:   "); Serial.println(WiFi.softAPIP());
+  // 4) Interfaz del AP (API de ESP-IDF, portable)
+  esp_netif_t* ap_netif = obtenerApNetif();
+  if (ap_netif == nullptr) {
+    Serial.println(">> No pude obtener la interfaz del AP (WIFI_AP_DEF). Revisa el core 3.x.");
+  } else {
+    // 5) Entregar un DNS publico a los clientes via DHCP (para resolver nombres)
+    esp_netif_dns_info_t dns = {};
+    dns.ip.type = ESP_IPADDR_TYPE_V4;
+    dns.ip.u_addr.ip4.addr = esp_ip4addr_aton("8.8.8.8");
+    uint8_t offer = 1;
+    esp_netif_dhcps_stop(ap_netif);
+    esp_netif_dhcps_option(ap_netif, ESP_NETIF_OP_SET,
+                           ESP_NETIF_DOMAIN_NAME_SERVER, &offer, sizeof(offer));
+    esp_netif_set_dns_info(ap_netif, ESP_NETIF_DNS_MAIN, &dns);
+    esp_netif_dhcps_start(ap_netif);
 
-  esp_netif_t* ap_netif = WiFi.AP.netif();   // core 3.x
-
-  // 4) Entregar un DNS publico a los clientes via DHCP (para resolver nombres)
-  esp_netif_dns_info_t dns = {};
-  dns.ip.type = ESP_IPADDR_TYPE_V4;
-  dns.ip.u_addr.ip4.addr = esp_ip4addr_aton("8.8.8.8");
-  uint8_t offer = 1;
-  esp_netif_dhcps_stop(ap_netif);
-  esp_netif_dhcps_option(ap_netif, ESP_NETIF_OP_SET,
-                         ESP_NETIF_DOMAIN_NAME_SERVER, &offer, sizeof(offer));
-  esp_netif_set_dns_info(ap_netif, ESP_NETIF_DNS_MAIN, &dns);
-  esp_netif_dhcps_start(ap_netif);
-
-  // 5) Activar NAT (NAPT) en la interfaz del AP
-  esp_err_t n = esp_netif_napt_enable(ap_netif);
-  g_naptOk = (n == ESP_OK);
-  Serial.printf("NAPT: %s\n", esp_err_to_name(n));
-  if (n != ESP_OK) {
-    Serial.println(">> Si dice NOT_SUPPORTED, tu core no trae NAPT: actualiza a esp32 core 3.x");
+    // 6) Activar NAT (NAPT) en la interfaz del AP
+    esp_err_t n = esp_netif_napt_enable(ap_netif);
+    g_naptOk = (n == ESP_OK);
+    Serial.printf("NAPT: %s\n", esp_err_to_name(n));
+    if (n != ESP_OK) {
+      Serial.println(">> Si dice NOT_SUPPORTED, tu core no trae NAPT: actualiza a esp32 core 3.x");
+    }
   }
 
   Serial.println("Listo. Conecta la laptop y el celular al AP 'ESP32-Extender'.");
@@ -145,9 +184,14 @@ void loop() {
   static unsigned long lastTelemetry = 0;
 
   if (WiFi.status() != WL_CONNECTED) {
-    if (up) { Serial.println("STA caida, reintentando..."); up = false; }
-    WiFi.reconnect();
-    delay(1000);
+    static unsigned long lastRetry = 0;
+    if (up) { Serial.println("STA sin conexion, reintentando..."); up = false; }
+    if (millis() - lastRetry > 5000) {   // reintenta cada 5 s, sin spamear "already connecting"
+      WiFi.disconnect();
+      WiFi.begin(STA_SSID, STA_PASS);
+      lastRetry = millis();
+    }
+    delay(500);
   } else if (!up) {
     Serial.println("STA reconectada."); up = true;
     sendTelemetry();                 // avisa de inmediato que volvio
