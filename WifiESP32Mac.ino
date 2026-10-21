@@ -11,8 +11,8 @@
  *
  * Requisitos:
  *   - ESP32 Arduino core 3.x  (Gestor de placas: "esp32" by Espressif)
- *   - Placa: ESP32-C5 (doble banda). RedRestringida es de 5 GHz (canales 44/64),
- *     por eso se usa el C5 y no el ESP32 clasico (que solo hace 2.4 GHz).
+ *   - Placa: ESP32-C5 (doble banda) si la red destino es de 5 GHz. Si tu red
+ *     es solo 2.4 GHz, sirve un ESP32 clasico.
  *
  * Nota de portabilidad: para obtener la interfaz del AP se usa la API de ESP-IDF
  * esp_netif_get_handle_from_ifkey("WIFI_AP_DEF") en lugar de WiFi.AP.netif(),
@@ -26,25 +26,25 @@
 #include "esp_netif.h"
 
 // ---------------- CONFIGURA ESTO ----------------
-const char* STA_SSID = "RedRestringida";          // red restringida (RedRestringida, banda 5 GHz)
-const char* STA_PASS = "***CLAVE_RETIRADA***";  // contrasena WPA2 de RedRestringida
-// (Para probar en otra red, cambia SSID/PASS de arriba.)
+const char* STA_SSID = "NOMBRE_DE_LA_RED";    // red con filtro por MAC a la que te conectas
+const char* STA_PASS = "CLAVE_DE_LA_RED";     // contrasena WPA2 de esa red
 
-const char* AP_SSID  = "ESP32-Extender";      // red que creara el ESP32
+const char* AP_SSID  = "iPhone 16";           // red que creara el ESP32 (nombre discreto)
 const char* AP_PASS  = "clave12345";          // minimo 8 caracteres
 
-// MAC del dispositivo autorizado a clonar (la de tu laptop: 00:11:22:33:44:55)
+// MAC del dispositivo YA autorizado en la red (el que el filtro deja pasar).
+// Pon aqui esos 6 bytes; es la MAC que el ESP32 va a clonar.
 uint8_t CLONE_MAC[6] = {0x00, 0x11, 0x22, 0x33, 0x44, 0x55};
-// Clonar la MAC: para RedRestringida (que filtra por MAC) va en TRUE -> el ESP usa
-// 00:11:22:33:44:55. Ponlo en false solo si pruebas en una red sin filtro donde
-// tu laptop ya este conectada con esa misma MAC (para evitar conflicto).
+// Clonar la MAC: en una red que filtra por MAC va en TRUE -> el ESP usa la MAC de
+// arriba. Ponlo en false solo si pruebas en una red sin filtro donde el equipo
+// original ya este conectado con esa misma MAC (para evitar conflicto).
 const bool CLONE_MAC_ENABLED = true;
 
 // ---- Telemetria al servidor (dashboard) ----
-// URL publica de tu API (tunel Cloudflare). Debe terminar en /api/telemetry
-const char* SERVER_URL   = "https://esp32.angelonesto.com/api/telemetry";
+// URL publica de tu API. Debe terminar en /api/telemetry
+const char* SERVER_URL   = "https://tu-servidor.ejemplo.com/api/telemetry";
 // Token: tiene que ser IDENTICO a DEVICE_TOKEN del .env del servidor
-const char* DEVICE_TOKEN = "***TOKEN_RETIRADO***";
+const char* DEVICE_TOKEN = "PON_EL_MISMO_TOKEN_QUE_EN_EL_ENV";
 const char* DEVICE_ID    = "esp32-c5-repetidor";
 const char* FW_VERSION   = "1.0";
 const unsigned long TELEMETRY_INTERVAL_MS = 30000;  // cada 30 s
@@ -72,7 +72,7 @@ void setup() {
   Serial.printf("set_country: %s\n", esp_err_to_name(c));
 
   // 0.1) ESP32-C5 doble banda: que el chip ESCOJA la banda (2.4 o 5 GHz).
-  //      RedRestringida es 5 GHz, asi que AUTO enganchara ahi; y vale para cualquier red.
+  //      Con AUTO engancha en la banda de tu red, sea 2.4 o 5 GHz.
   esp_err_t bm = esp_wifi_set_band_mode(WIFI_BAND_MODE_AUTO);
   Serial.printf("set_band_mode(AUTO): %s\n", esp_err_to_name(bm));
 
@@ -93,7 +93,7 @@ void setup() {
   Serial.print("AP IP:   "); Serial.println(WiFi.softAPIP());
 
   // 2.1) Escaneo de diagnostico: confirma que la red destino se ve y en que canal.
-  //      Si VRLAB/RedRestringida NO aparece aqui, es banda/alcance, no contrasena.
+  //      Si tu red NO aparece aqui, es banda/alcance, no la contrasena.
   int nn = WiFi.scanNetworks();
   Serial.printf("Redes visibles: %d\n", nn);
   for (int i = 0; i < nn && i < 20; i++) {
@@ -141,7 +141,7 @@ void setup() {
     }
   }
 
-  Serial.println("Listo. Conecta la laptop y el celular al AP 'ESP32-Extender'.");
+  Serial.printf("Listo. Conecta la laptop y el celular al AP '%s'.\n", AP_SSID);
 }
 
 // Envia una muestra de telemetria al servidor (HTTPS POST con JSON).
@@ -165,7 +165,7 @@ void sendTelemetry() {
     (unsigned)ESP.getFreeHeap());
 
   WiFiClientSecure client;
-  client.setInsecure();   // practica: no validamos el cert del tunel (Cloudflare)
+  client.setInsecure();   // practica: no validamos el cert del tunel HTTPS
   HTTPClient https;
   if (!https.begin(client, SERVER_URL)) {
     Serial.println("telemetria: begin() fallo");

@@ -1,7 +1,7 @@
 {
   "name": "esp32-telemetry",
   "version": "1.0.0",
-  "description": "API + dashboard para recibir la telemetria del repetidor ESP32-C5 (practica RedRestringida)",
+  "description": "API + dashboard para recibir la telemetria del repetidor ESP32-C5",
   "main": "server.js",
   "type": "commonjs",
   "scripts": {

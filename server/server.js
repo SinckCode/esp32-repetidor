@@ -219,7 +219,7 @@ async function tick(){
       card('NAPT', l.napt_ok?'Activo':'Fallo', l.napt_ok?'NAT funcionando':'Sin NAT', l.napt_ok?'good':'bad')+
       card('Señal', (l.rssi!=null?l.rssi+' dBm':'—'), rssiLabel(l.rssi), rssiCls(l.rssi))+
       card('Canal', esc(l.channel!=null?l.channel:'—'), band(l.channel), 'neutral')+
-      card('Clientes', esc(l.ap_clients!=null?l.ap_clients:'—'), 'En ESP32-Extender', 'neutral')+
+      card('Clientes', esc(l.ap_clients!=null?l.ap_clients:'—'), 'En el AP del ESP32', 'neutral')+
       card('Uptime', dur(l.uptime_s), 'Sin reinicios', 'neutral')+
       card('Heap libre', l.heap_free!=null?(Math.round(l.heap_free/1024)+' KB'):'—', 'Memoria', 'neutral');
     $('#rssi-now').textContent = l.rssi!=null?(l.rssi+' dBm'):'';

@@ -1,16 +1,15 @@
 # ESP32-C5 Telemetry — API + Dashboard
 
 App mínima (Node + Express, **sin dependencias nativas**) que recibe la telemetría
-del repetidor ESP32-C5 (práctica RedRestringida), la guarda y la muestra en un dashboard
-protegido con login. Pensada para correr en una VM del homelab, detrás de un túnel
-de Cloudflare (HTTPS).
+del repetidor ESP32-C5, la guarda y la muestra en un dashboard protegido con login.
+Pensada para correr en cualquier VM, detrás de un túnel HTTPS (p. ej. Cloudflare).
 
 ## Qué hace
 
 - `POST /api/telemetry` — el ESP32 manda JSON con `Authorization: Bearer <DEVICE_TOKEN>`.
   Cada muestra se guarda como una línea en `data/telemetry.jsonl`.
 - `GET /` — dashboard en vivo (requiere login). Muestra: STA conectado, **MAC clonada**
-  (resaltada si coincide con la esperada), IP en RedRestringida, **NAPT OK/FALLO**, RSSI,
+  (resaltada si coincide con la esperada), IP en la red destino, **NAPT OK/FALLO**, RSSI,
   canal, clientes en el AP, uptime, heap libre, gráfico de RSSI e historial.
 - `GET /login` · `POST /login` · `POST /logout` — sesión con un solo usuario.
 - `GET /health` — para healthchecks (sin auth).
@@ -42,12 +41,12 @@ npm start
 # abre http://localhost:5055  (login con DASH_USER/DASH_PASS)
 ```
 
-## Desplegar en una VM del homelab (PM2 + Cloudflare)
+## Desplegar en una VM (PM2 + túnel HTTPS)
 
-1. **Copiar el código** a la **VM 103**, en su **propia carpeta** (app aparte; no
-   se mezcla con `sensores` — proceso PM2, puerto y `.env` independientes):
+1. **Copiar el código** a tu VM, en su **propia carpeta** (proceso PM2, puerto y
+   `.env` independientes):
    ```bash
-   # dentro de la VM 103
+   # dentro de la VM
    mkdir -p ~/Apis/esp32-telemetry && cd ~/Apis/esp32-telemetry
    # sube el contenido de esta carpeta server/ (git clone o scp)
    npm ci --omit=dev
@@ -65,21 +64,21 @@ npm start
    ```yaml
    # ~/.cloudflared/config.yml  (o donde tengas el tunnel)
    ingress:
-     - hostname: esp32.angelonesto.com
+     - hostname: tu-servidor.ejemplo.com
        service: http://localhost:5055
      # ...tus otras reglas...
      - service: http_status:404
    ```
    ```bash
-   cloudflared tunnel route dns <nombre-del-tunnel> esp32.angelonesto.com
+   cloudflared tunnel route dns <nombre-del-tunnel> tu-servidor.ejemplo.com
    # reinicia el servicio cloudflared
    ```
 
 4. **Apuntar el ESP32**: en `WifiESP32Mac.ino` pon
-   `SERVER_URL = "https://esp32.angelonesto.com/api/telemetry"` y el mismo
+   `SERVER_URL = "https://tu-servidor.ejemplo.com/api/telemetry"` y el mismo
    `DEVICE_TOKEN` que en el `.env`. Sube el sketch.
 
-5. Abre `https://esp32.angelonesto.com`, entra con tu usuario/clave y mira la
+5. Abre `https://tu-servidor.ejemplo.com`, entra con tu usuario/clave y mira la
    telemetría llegar cada 30 s.
 
 ## Notas
